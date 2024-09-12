@@ -1,0 +1,147 @@
+---
+title: "project acturial methods"
+author: "Uma rm - (2348160)"
+date: "2024-09-12"
+output:
+  word_document: default
+  html_document: default
+---
+
+Introduction:
+
+In the realm of actuarial science and risk management, understanding the lifespan of individuals and how it impacts financial products like annuities is crucial. The Cox Proportional Hazard Model is a powerful statistical tool used to explore the relationship between the survival time of individuals and one or more predictor variables, such as age or health status. This project delves into the application of this model to simulate survival data, estimate survival probabilities, and ultimately calculate deferred annuities. Additionally, the project performs a sensitivity analysis to gauge the impact of varying model parameters on annuity premiums. To bring these concepts to life, an interactive R Shiny app was developed, allowing users to explore and visualize these calculations dynamically.
+
+Objective:
+
+The project aims to achieve the following key objectives:
+
+Simulate Survival Data: Create a realistic dataset representing the survival times of individuals, taking into account variables like age and additional covariates.
+
+Fit a Cox Proportional Hazard Model: Use the simulated data to estimate the relationship between survival times and covariates, such as age and health indicators.
+
+Estimate Survival Functions: Determine the survival probabilities for a specified cohort age, which are essential for calculating future financial obligations.
+
+Calculate Deferred Annuities: Compute the present value of annuities payable over a set period, factoring in survival probabilities and discount rates.
+
+Conduct Sensitivity Analysis: Analyze how changes in the coefficients of the Cox model influence the calculated annuity premiums, providing insight into the stability and reliability of these financial estimates.
+
+Develop an Interactive R Shiny App: Build an application that allows users to adjust inputs like cohort age and discount rates and visualize the resulting survival functions, annuity values, and sensitivity analyses in real-time.
+
+Data Simulation:
+
+The data simulation step generates a synthetic dataset to mimic real-world survival data. Here are the details of the simulated data:
+
+Sample Size: The dataset consists of 1000 individuals.
+
+Age: The age of individuals is normally distributed with a mean of 50 years and a standard deviation of 10 years.
+
+Time: The survival time (i.e., the time until the event occurs) is exponentially distributed with a rate of 0.1.
+
+Event Status: The event status is a binary variable (1 = event occurred, 0 = censored), with a 70% probability that the event occurs.
+
+Covariates: Two covariates were included in the dataset:
+
+covariate1: A normally distributed variable with a mean of 0 and a standard deviation of 1.
+covariate2: A binary variable with a 50% probability of being 1.
+
+This simulated dataset serves as the foundation for the Cox Proportional Hazard Model, representing a realistic scenario where individuals’ survival times are influenced by their age and other factors.
+
+```{r}
+# Load necessary libraries
+library(shiny)
+library(survival)
+
+# Define UI for the RShiny app
+ui <- fluidPage(
+    titlePanel("Cox Proportional Hazard Model and Annuities Calculation"),
+    
+    sidebarLayout(
+        sidebarPanel(
+            numericInput("age", "Age for Cohort:", min = 20, max = 80, value = 60),
+            numericInput("years", "Number of Years for Annuities:", min = 1, max = 20, value = 10),
+            numericInput("discount_rate", "Discount Rate:", min = 0.01, max = 0.10, value = 0.05, step = 0.01),
+            actionButton("simulate", "Simulate & Calculate")
+        ),
+        
+        mainPanel(
+            plotOutput("baselinePlot"),
+            tableOutput("annuityTable"),
+            plotOutput("sensitivityPlot")
+        )
+    )
+)
+
+# Define server logic for RShiny app
+server <- function(input, output) {
+    
+    observeEvent(input$simulate, {
+        
+        # Data Simulation
+        set.seed(123)
+        n <- 1000
+        age <- round(rnorm(n, mean = 50, sd = 10))
+        time <- rexp(n, rate = 0.1)
+        status <- rbinom(n, 1, 0.7) # 1 = event, 0 = censored
+        covariate1 <- rnorm(n, mean = 0, sd = 1)
+        covariate2 <- rbinom(n, 1, 0.5)
+        data <- data.frame(age, time, status, covariate1, covariate2)
+        
+        # Cox Proportional Hazard Model
+        cox_model <- coxph(Surv(time, status) ~ age + covariate1 + covariate2, data = data)
+        
+        # Baseline Survival Estimate for chosen age
+        baseline_survival <- survfit(cox_model, newdata = data.frame(age = input$age, covariate1 = 0, covariate2 = 0))
+        
+        # Deferred probabilities
+        deferred_prob <- summary(baseline_survival, times = 1:input$years)$surv
+        
+        # Annuity Calculation
+        annuity_values <- sapply(1:input$years, function(t) deferred_prob[t] / (1 + input$discount_rate)^t)
+        
+        # Sensitivity Analysis
+        sensitivity <- sapply(coef(cox_model), function(beta) {
+            altered_model <- coxph(Surv(time, status) ~ I(age * beta) + covariate1 + covariate2, data = data)
+            altered_survival <- survfit(altered_model, newdata = data.frame(age = input$age, covariate1 = 0, covariate2 = 0))
+            sum(summary(altered_survival)$surv)
+        })
+        
+        # Outputs
+        output$baselinePlot <- renderPlot({
+            plot(baseline_survival, xlab = "Time", ylab = "Survival Probability", main = "Baseline Survival Function")
+        })
+        
+        output$annuityTable <- renderTable({
+            data.frame(Year = 1:input$years, Annuity = annuity_values)
+        })
+        
+        output$sensitivityPlot <- renderPlot({
+            plot(coef(cox_model), sensitivity, type = 'b', xlab = "Beta Coefficients", ylab = "Premium Estimate",
+                 main = "Sensitivity of Premium to Beta Coefficients")
+        })
+    })
+}
+
+# Run the RShiny app
+shinyApp(ui = ui, server = server)
+
+```
+Interpretation
+Survival Data Simulation:
+
+The first step involved simulating data for 1000 individuals, each with variables such as age, survival time, and event status (whether the individual experienced the event or was censored). The simulation also included two covariates to introduce variability in the data, mimicking real-world scenarios where multiple factors influence survival.
+Cox Proportional Hazard Model:
+
+The Cox model was then fitted to this simulated data, providing estimates of how the hazard (risk of the event occurring) changes with each covariate. For example, an increase in age might lead to a higher hazard, reflecting a shorter expected survival time. These hazard ratios are crucial for understanding the impact of each predictor on survival.
+Baseline Survival Estimate:
+
+The survival function, particularly the baseline survival curve for a cohort of individuals at a specified age (e.g., 60 years), was estimated using the Cox model. This curve provides the probability that an individual will survive beyond various time points. Such estimates are foundational for calculating annuities.
+Deferred Annuities Calculation:
+
+Deferred annuities were calculated by discounting future payments based on the survival probabilities over the next ten years. This calculation reflects the present value of annuities that will be paid only if the individual survives to each future period. A discount rate (e.g., 5%) was applied to account for the time value of money, which reduces the value of future payments.
+Sensitivity Analysis:
+
+Sensitivity analysis was conducted to explore how changes in the Cox model’s coefficients (representing the effect of predictors like age) impact the premium estimates. By systematically varying these coefficients, we could observe the elasticity of the premium—essentially, how sensitive the premium is to changes in the predictors. This analysis is crucial for understanding the robustness of the premium calculations and ensuring they remain stable under different conditions.
+Conclusion
+This project demonstrates the practical application of the Cox Proportional Hazard Model in actuarial science, particularly in estimating survival probabilities and calculating annuities. By simulating survival data, fitting a Cox model, and calculating deferred annuities, we gain insights into how different factors influence survival and financial outcomes. The sensitivity analysis further enhances our understanding by revealing how changes in model parameters can affect premium estimates.
+
+The development of an R Shiny app brings these concepts to life, offering a dynamic and interactive platform for users to explore the relationships between survival probabilities, annuities, and model coefficients. The app serves as a valuable tool for both educational and professional purposes, allowing users to visualize the impact of different inputs on survival and financial calculations.
